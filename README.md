@@ -4,6 +4,15 @@ Chatty-Pet is a Flutter app for a small reducer-owned pet terrarium. The current
 
 This repository is the public source release for Chatty-Pet. The same shared Flutter codebase covers the app logic and the supported platform wrappers in this repo, including Android, Windows, and web.
 
+## Screenshots
+
+![Chatty-Pet care stage](<./assets/unnamed.png>)
+
+| Care views | Support views |
+| --- | --- |
+| ![Chatty-Pet item interaction](<./assets/unnamed2.png>) | ![Chatty-Pet support surface](<./assets/unnamed3.png>) |
+| ![Chatty-Pet activity view](<./assets/unnamed4.png>) |  |
+
 ## Public Links
 
 - Google Play: <https://play.google.com/store/apps/details?id=io.instance001.chattypet>
@@ -40,6 +49,30 @@ The app follows a simple deterministic doctrine:
 
 RD Engine doctrine is the architectural spine behind Chatty-Pet's reducer-governed world state, even though this app is implemented here as a Flutter project rather than as a Rust desktop app.
 
+## Care Loop Map
+
+```mermaid
+flowchart TB
+    player["Player<br/>short local care session"] --> stage["Pet stage<br/>place, select, inspect, use"]
+    stage --> action["Structured action<br/>spawn item, move, inspect, use, tick"]
+
+    templates["Starter item templates<br/>food, toys, cozy items, tidy tools"] --> reducer["Reducer<br/>validates requests and owns truth"]
+    state["Local runtime state<br/>needs, affection, inventory, unlocks, item positions"] --> reducer
+    action --> reducer
+
+    reducer --> rejected["Impossible action<br/>plain visible feedback"]
+    reducer --> events["Confirmed events<br/>movement, item reaction, speech, unlock"]
+    events --> state
+
+    state --> ui["Flutter UI<br/>status, stage, controls, activity box"]
+    events --> ui
+    rejected --> ui
+    ui --> player
+
+    state --> save["Device-local save data<br/>no account, ads, or purchase loop"]
+    save --> state
+```
+
 ## Current Status
 
 The current public source release includes:
@@ -50,6 +83,12 @@ The current public source release includes:
 - local save/load behavior
 - Android release bundle generation
 - automated analysis and test coverage for core reducer behavior
+
+## Storage And Release Layout
+
+Chatty-Pet stores gameplay progress through Flutter's platform-managed `shared_preferences` storage. It does not write saves into repository-relative folders or require a portable data directory beside the executable.
+
+Android signing secrets stay local: `android/key.properties` and keystore files are ignored, while `android/key.properties.example` documents the expected shape. Build outputs under `build/` and Android generated release folders are ignored.
 
 ## Development
 
@@ -87,6 +126,7 @@ chatty-pet/
 - [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md)
 - [docs/PLAY_STORE_METADATA.md](docs/PLAY_STORE_METADATA.md)
 - [docs/PRIVACY_POLICY.md](docs/PRIVACY_POLICY.md)
+- [GLOSSARY.md](GLOSSARY.md)
 
 ## License
 
