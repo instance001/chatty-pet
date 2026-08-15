@@ -4,6 +4,15 @@ Chatty-Pet is a Flutter app for a small reducer-owned pet terrarium. The current
 
 This repository is the public source release for Chatty-Pet. The same shared Flutter codebase covers the app logic and the supported platform wrappers in this repo, including Android, Windows, and web.
 
+## Install
+
+- Google Play: <https://play.google.com/store/apps/details?id=io.instance001.chattypet>
+- Direct APK: <https://github.com/instance001/chatty-pet/releases/download/v1.0.0-b1/chatty-pet-v1.0.0-b1.apk>
+- Latest releases: <https://github.com/instance001/chatty-pet/releases>
+- Obtainium: add this GitHub repository and track releases.
+
+The direct APK is provided for users who prefer GitHub release installs or Obtainium updates. Google Play remains the easiest install path for most Android users.
+
 ## Screenshots
 
 ![Chatty-Pet care stage](<./assets/unnamed.png>)
@@ -16,6 +25,7 @@ This repository is the public source release for Chatty-Pet. The same shared Flu
 ## Public Links
 
 - Google Play: <https://play.google.com/store/apps/details?id=io.instance001.chattypet>
+- Direct APK release: <https://github.com/instance001/chatty-pet/releases/tag/v1.0.0-b1>
 - Privacy policy: <https://instance001.github.io/privacy/chatty-pet.html>
 - FMI Google Play directory: <https://instance001.github.io/google-play.html>
 - Publisher site: <https://instance001.github.io/>
