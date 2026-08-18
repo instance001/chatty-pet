@@ -37,4 +37,4 @@ This ID should be treated as stable for Play Store purposes unless there is a st
 
 - Android package namespace and application ID are aligned to the org-owned `instance001` lane.
 - FMI is the publishing/steward identity for the Play release.
-- RD Engine should be credited as the reducer doctrine and deterministic runtime design spine behind Chatty-Pet.
+- RD Engine should be credited as the reducer doctrine and deterministic runtime design lineage behind Chatty-Pet.

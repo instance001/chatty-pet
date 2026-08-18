@@ -17,4 +17,4 @@ The first pass keeps one pet, one room, a tiny invisible grid, a few spawnable i
 
 ## Future Direction
 
-Future narration, save/load, datapacks, creator tools, and Google Play release work all sit on top of the reducer-owned spine instead of bypassing it.
+Future narration, save/load, datapacks, creator tools, and Google Play release work all sit on top of the reducer-owned state model instead of bypassing it.

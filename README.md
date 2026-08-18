@@ -47,7 +47,7 @@ The app is designed to stay honest about what it is:
 - no in-app purchases
 - save data stays on the device
 
-## Design Spine
+## Design Rules
 
 The app follows a simple deterministic doctrine:
 
@@ -57,7 +57,7 @@ The app follows a simple deterministic doctrine:
 - events describe confirmed outcomes
 - support surfaces explain the toy instead of expecting players to guess
 
-RD Engine doctrine is the architectural spine behind Chatty-Pet's reducer-governed world state, even though this app is implemented here as a Flutter project rather than as a Rust desktop app.
+RD Engine doctrine is the architectural lineage behind Chatty-Pet's reducer-governed world state, even though this app is implemented here as a Flutter project rather than as a Rust desktop app.
 
 ## Care Loop Map
 
