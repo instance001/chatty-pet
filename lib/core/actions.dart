@@ -24,6 +24,10 @@ class PetInspect extends PetAction {
   final String? itemId;
 }
 
+class PetGreet extends PetAction {
+  const PetGreet();
+}
+
 class PetUseItem extends PetAction {
   const PetUseItem([this.itemId]);
 
@@ -66,4 +70,8 @@ class ClearSpeech extends PetAction {
 
 class ClearStage extends PetAction {
   const ClearStage();
+}
+
+class CompleteQueuedTransformation extends PetAction {
+  const CompleteQueuedTransformation();
 }

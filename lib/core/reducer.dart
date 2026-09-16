@@ -1,5 +1,9 @@
+import 'dart:math';
+
 import 'actions.dart';
 import 'chatty_activity_moment.dart';
+import 'chatty_forms.dart';
+import 'chatty_life_state.dart';
 import 'events.dart';
 import 'game_state.dart';
 import 'grid.dart';
@@ -11,7 +15,11 @@ import 'pet_state.dart';
 import 'reducer_result.dart';
 
 class ChattyPetReducer {
-  static ReducerResult reduce(GameState state, PetAction action) {
+  static ReducerResult reduce(
+    GameState state,
+    PetAction action, {
+    Random? random,
+  }) {
     return switch (action) {
       StartNewGame() => _withAppend(
         _refreshPetState(
@@ -32,7 +40,7 @@ class ChattyPetReducer {
         ],
         const ['Chatty is awake and ready to play!'],
       ),
-      Tick() => _handleTick(state),
+      Tick() => _handleTick(state, random: random),
       AdvanceToSelectedItem() => _handleAdvanceToSelectedItem(state),
       UseSelectedItemWhenReady() => _handleUseSelectedItemWhenReady(state),
       InspectSelectedItemWhenReady() => _handleInspectSelectedItemWhenReady(
@@ -44,10 +52,12 @@ class ChattyPetReducer {
         template,
       ),
       PetInspect(:final itemId) => _handleInspect(state, itemId),
+      PetGreet() => _handlePetGreet(state),
       PetUseItem(:final itemId) => _handleUse(state, itemId),
       SelectItem(:final itemId) => _handleSelectItem(state, itemId),
       RemoveStageItem(:final itemId) => _handleRemoveStageItem(state, itemId),
       ClearStage() => _handleClearStage(state),
+      CompleteQueuedTransformation() => _completeQueuedTransformation(state),
       ClearSpeech() => _withAppend(
         state.copyWith(pet: state.pet.copyWith(currentSpeech: null)),
         const [],
@@ -128,7 +138,7 @@ class ChattyPetReducer {
     );
   }
 
-  static ReducerResult _handleTick(GameState state) {
+  static ReducerResult _handleTick(GameState state, {Random? random}) {
     final item =
         _resolveTargetItem(state, state.selectedItemId) ??
         _resolveTargetItem(state, state.pet.targetItemId) ??
@@ -149,7 +159,12 @@ class ChattyPetReducer {
     if (item == null) {
       final wanderedPosition = _idleWanderPosition(state);
       final moved = wanderedPosition != state.pet.position;
-      final idleLine = _idleSpeechForPet(pet, nextTimeOfDay);
+      final form = ChattyForms.byId(state.life.activeFormId);
+      final idleLine = ChattyForms.idleFor(
+        form,
+        pet.mood.name,
+        nextTickCount + state.activityMoment.serial,
+      );
       pet = pet.copyWith(
         position: wanderedPosition,
         currentSpeech: idleLine,
@@ -160,8 +175,9 @@ class ChattyPetReducer {
       }
       events.add(SpeechChanged(idleLine));
       lines.add(idleLine);
-      return _withAppend(
-        _syncActivityPhase(
+      return _finishTick(
+        previousState: state,
+        nextState: _syncActivityPhase(
           _refreshPetState(
             state.copyWith(
               tickCount: nextTickCount,
@@ -172,8 +188,9 @@ class ChattyPetReducer {
           ),
           nextTimeOfDay,
         ),
-        events,
-        lines,
+        events: events,
+        lines: lines,
+        random: random ?? Random(),
       );
     }
 
@@ -201,8 +218,9 @@ class ChattyPetReducer {
       lines.add(line);
     }
 
-    return _withAppend(
-      _syncActivityPhase(
+    return _finishTick(
+      previousState: state,
+      nextState: _syncActivityPhase(
         _refreshPetState(
           state.copyWith(
             tickCount: nextTickCount,
@@ -213,8 +231,81 @@ class ChattyPetReducer {
         ),
         nextTimeOfDay,
       ),
-      events,
-      lines,
+      events: events,
+      lines: lines,
+      random: random ?? Random(),
+    );
+  }
+
+  static ReducerResult _handlePetGreet(GameState state) {
+    final form = ChattyForms.byId(state.life.activeFormId);
+    final line = ChattyForms.greetingFor(
+      form,
+      state.pet.mood.name,
+      state.tickCount + state.activityMoment.serial,
+    );
+    return _withAppend(
+      state.copyWith(
+        pet: state.pet.copyWith(currentSpeech: line),
+        activityMoment: buildGreetingActivityMoment(
+          serial: state.activityMoment.serial + 1,
+          timeOfDay: state.timeOfDay,
+          caption: line,
+          formEmoji: form.emoji,
+        ),
+      ),
+      [const PetGreeted(), SpeechChanged(line)],
+      [line],
+    );
+  }
+
+  static ReducerResult _finishTick({
+    required GameState previousState,
+    required GameState nextState,
+    required List<PetEvent> events,
+    required List<String> lines,
+    required Random random,
+  }) {
+    var settledState = nextState;
+    if (nextState.dayCount != previousState.dayCount) {
+      final life = nextState.life.reviewEligibility(
+        dayCount: nextState.dayCount,
+      );
+      settledState = nextState.copyWith(life: life);
+      if (life.ordinaryTransformationEligible &&
+          life.pendingTransformationFormId == null &&
+          random.nextInt(100) < 35) {
+        final form = ChattyForms.chooseOrdinary(life, random: random);
+        settledState = settledState.copyWith(
+          life: life.queueOrdinaryTransformation(form.id),
+        );
+        events.add(ChattyTransformationQueued(form.id));
+      }
+    }
+    return _withAppend(settledState, events, lines);
+  }
+
+  static ReducerResult _completeQueuedTransformation(GameState state) {
+    final formId = state.life.pendingTransformationFormId;
+    if (formId == null) {
+      return ReducerResult(state: state, events: const [], lines: const []);
+    }
+    final form = ChattyForms.byId(formId);
+    final line =
+        'A little sparkle settles. ${ChattyForms.greetingFor(form, state.pet.mood.name, state.activityMoment.serial + 1)}';
+    return _withAppend(
+      state.copyWith(
+        life: state.life.completeQueuedTransformation(dayCount: state.dayCount),
+        pet: state.pet.copyWith(currentSpeech: line),
+        activityMoment: buildCelebrateActivityMoment(
+          serial: state.activityMoment.serial + 1,
+          timeOfDay: state.timeOfDay,
+          caption: line,
+          propEmoji: form.emoji,
+        ),
+      ),
+      [ChattyTransformed(form.id), SpeechChanged(line)],
+      [line],
     );
   }
 
@@ -402,11 +493,19 @@ class ChattyPetReducer {
     }
 
     final template = state.templates[item.templateId]!;
-    final line = _pickLine(
+    final baseLine = _pickLine(
       template.useLines,
       state.tickCount + item.position.x + item.position.y + state.pet.affection,
       fallback: 'Chatty gives ${template.displayName} a proper try.',
     );
+    final form = ChattyForms.byId(state.life.activeFormId);
+    final flourish = ChattyForms.interactionFlourishFor(
+      form,
+      template.kind,
+      state.pet.mood.name,
+      state.tickCount + state.activityMoment.serial + item.position.x,
+    );
+    final line = '$baseLine $flourish';
     final nextItems = state.items
         .where((entry) => entry.id != item.id)
         .toList();
@@ -429,6 +528,7 @@ class ChattyPetReducer {
               timeOfDay: state.timeOfDay,
               template: template,
               caption: line,
+              actorEmoji: form.emoji,
             ),
           ),
           events: [PetAteItem(item.id), SpeechChanged(line)],
@@ -447,6 +547,7 @@ class ChattyPetReducer {
               timeOfDay: state.timeOfDay,
               template: template,
               caption: line,
+              actorEmoji: form.emoji,
             ),
           ),
           events: [PetPlayedWithItem(item.id), SpeechChanged(line)],
@@ -465,6 +566,7 @@ class ChattyPetReducer {
               timeOfDay: state.timeOfDay,
               template: template,
               caption: line,
+              actorEmoji: form.emoji,
             ),
           ),
           events: [PetRested(item.id), SpeechChanged(line)],
@@ -483,6 +585,7 @@ class ChattyPetReducer {
               timeOfDay: state.timeOfDay,
               template: template,
               caption: line,
+              actorEmoji: form.emoji,
             ),
           ),
           events: [PetCleaned(item.id), SpeechChanged(line)],
@@ -502,6 +605,7 @@ class ChattyPetReducer {
               timeOfDay: state.timeOfDay,
               template: template,
               caption: line,
+              actorEmoji: form.emoji,
             ),
           ),
           events: [PetInspectedItem(item.id), SpeechChanged(line)],
@@ -738,7 +842,10 @@ class ChattyPetReducer {
     required List<PetEvent> events,
     required List<String> lines,
   }) {
-    final refreshedState = _refreshPetState(nextState);
+    final refreshedState = _recordCareHistory(
+      _refreshPetState(nextState),
+      events,
+    );
     final unlocks = _newUnlocks(refreshedState);
     if (unlocks.isEmpty) {
       return _withAppend(refreshedState, events, lines);
@@ -754,6 +861,26 @@ class ChattyPetReducer {
       [...events, ...unlockEvents],
       [...lines, ...unlockLines],
     );
+  }
+
+  static GameState _recordCareHistory(GameState state, List<PetEvent> events) {
+    ChattyCareKind? careKind;
+    for (final event in events) {
+      careKind = switch (event) {
+        PetAteItem() => ChattyCareKind.nourishing,
+        PetPlayedWithItem() => ChattyCareKind.playful,
+        PetRested() => ChattyCareKind.calm,
+        PetCleaned() => ChattyCareKind.tidy,
+        PetInspectedItem() => ChattyCareKind.companion,
+        _ => careKind,
+      };
+      if (careKind != null) break;
+    }
+    return careKind == null
+        ? state
+        : state.copyWith(
+            life: state.life.recordCare(careKind, dayCount: state.dayCount),
+          );
   }
 
   static GameState _refreshPetState(GameState state) {
@@ -828,63 +955,6 @@ class ChattyPetReducer {
         .map((template) => template.id)
         .toList()
       ..sort();
-  }
-
-  static String _idleSpeechForPet(PetState pet, TimeOfDay timeOfDay) {
-    final lines = switch (pet.mood) {
-      PetMood.hungry => const [
-        'Chatty is dreaming about a little snack.',
-        'Those paws seem snack-minded right now.',
-        'A tasty bite would cheer Chatty up.',
-      ],
-      PetMood.sleepy =>
-        timeOfDay == TimeOfDay.night
-            ? const [
-                'Chatty looks very ready for bedtime.',
-                'Sleepy eyes. Sleepy paws. Tiny yawn.',
-                'Nighttime is making Chatty wonderfully drowsy.',
-              ]
-            : const [
-                'Chatty could use a little rest stop.',
-                'A cozy pause would help right now.',
-                'Chatty is looking a tiny bit droopy.',
-              ],
-      PetMood.messy => const [
-        'Chatty could use a soft little tidy-up.',
-        'A gentle freshen-up would feel lovely.',
-        'Chatty looks a little fluff-rumpled.',
-      ],
-      PetMood.grumpy => const [
-        'Chatty could use a playful pick-me-up.',
-        'This feels like a low-fun little patch.',
-        'A silly surprise would help right now.',
-      ],
-      PetMood.happy => const [
-        'Chatty is feeling bright and wonderful.',
-        'Everything feels pretty lovely right now.',
-        'Chatty is having a very nice little day.',
-      ],
-      PetMood.playful => const [
-        'Chatty is ready to play!',
-        'Zoomies may happen at any moment.',
-        'This feels like peak playtime.',
-      ],
-      PetMood.cozy => const [
-        'Chatty feels cozy and calm.',
-        'This is a snug little moment.',
-        'Chatty is in a soft and settled mood.',
-      ],
-      PetMood.curious => const [
-        'Chatty wanders and wonders a bit.',
-        'Chatty is looking for something interesting to notice.',
-        'Curious paws are gently on the move.',
-      ],
-    };
-    return _pickLine(
-      lines,
-      pet.affection + pet.fullness + pet.fun,
-      fallback: lines.first,
-    );
   }
 
   static String _pickLine(

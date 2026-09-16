@@ -44,6 +44,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Local GGUF model files are packaged only in publisher release builds.
+# Open-source builds supply their own compatible model.
+/assets/models/*.gguf
+
 # Android release signing
 /android/key.properties
 /android/*.jks

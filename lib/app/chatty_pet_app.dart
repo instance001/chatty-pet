@@ -3,10 +3,14 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../content/starter_datapack.dart';
 import '../core/actions.dart';
+import '../core/chatty_calendar_events.dart';
+import '../core/chatty_forms.dart';
+import '../ui/chatty_avatar_asset.dart';
 import '../core/custom_item_factory.dart';
 import '../core/game_state.dart';
 import '../core/item_instance.dart';
@@ -15,6 +19,7 @@ import '../core/pet_rules.dart' as pet_rules;
 import '../core/reducer.dart';
 import '../core/reducer_result.dart';
 import '../ui/chatty_activity_box.dart';
+import '../ui/chatty_talk_panel.dart';
 import '../ui/control_panel.dart';
 import '../ui/inventory_strip.dart';
 import '../ui/pet_stage.dart';
@@ -23,7 +28,8 @@ import '../ui/status_panel.dart';
 import 'game_persistence.dart';
 import 'chatty_soundscape.dart';
 
-const _chattyPetPrivacyUrl = 'https://instance001.github.io/privacy/chatty-pet.html';
+const _chattyPetPrivacyUrl =
+    'https://instance001.github.io/privacy/chatty-pet.html';
 
 class ChattyPetApp extends StatelessWidget {
   const ChattyPetApp({super.key});
@@ -165,6 +171,9 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
   ReducerResult _result = _buildFreshGame();
   bool _loading = true;
   bool _animating = false;
+  String? _presentingTransformationFormId;
+  String? _debugPreviewFormId;
+  String? _debugPreviewTransformationFormId;
   bool _soundMuted = false;
   Timer? _idleSoundTimer;
   DateTime _lastSoundActivityAt = DateTime.now();
@@ -177,6 +186,32 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
   }
 
   GameState get _state => _result.state;
+
+  String get _displayFormId => _debugPreviewFormId ?? _state.life.activeFormId;
+
+  void _setDebugPreviewForm(String? formId) {
+    assert(kDebugMode);
+    setState(() {
+      _debugPreviewFormId = formId;
+      _debugPreviewTransformationFormId = formId;
+    });
+    if (formId != null) {
+      unawaited(_finishDebugPreviewTransformation(formId));
+    }
+  }
+
+  Future<void> _finishDebugPreviewTransformation(String formId) async {
+    final reducedMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    await Future<void>.delayed(
+      reducedMotion
+          ? const Duration(milliseconds: 900)
+          : const Duration(milliseconds: 1700),
+    );
+    if (mounted && _debugPreviewTransformationFormId == formId) {
+      setState(() => _debugPreviewTransformationFormId = null);
+    }
+  }
 
   @override
   void initState() {
@@ -192,7 +227,16 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
   }
 
   Future<void> _loadSavedGame() async {
-    final savedState = await _persistence.load();
+    GameState? savedState;
+    try {
+      savedState = await _persistence.load().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => null,
+      );
+    } catch (_) {
+      // A saved game is optional. Never strand the toy room behind a failed
+      // local-storage read; the fresh deterministic state is ready to use.
+    }
     if (!mounted) {
       return;
     }
@@ -209,6 +253,8 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
     });
     _lastSoundActivityAt = DateTime.now();
     _scheduleIdleSound();
+    _checkCalendarEvent();
+    unawaited(_presentQueuedTransformation());
   }
 
   void _dispatch(PetAction action) {
@@ -243,6 +289,53 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
     });
     unawaited(_handleSoundTransition(previousState, _result));
     unawaited(_persistence.save(_result.state));
+    _checkCalendarEvent();
+    unawaited(_presentQueuedTransformation());
+  }
+
+  void _checkCalendarEvent() {
+    final checkedState = ChattyCalendarEvents.observe(_state, DateTime.now());
+    if (identical(checkedState, _state)) {
+      return;
+    }
+    setState(() {
+      _result = ReducerResult(
+        state: checkedState,
+        events: const [],
+        lines: const [],
+      );
+    });
+    unawaited(_persistence.save(_state));
+    unawaited(_presentQueuedTransformation());
+  }
+
+  Future<void> _presentQueuedTransformation() async {
+    final formId = _state.life.pendingTransformationFormId;
+    if (formId == null || _presentingTransformationFormId != null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _presentingTransformationFormId = formId;
+      _animating = true;
+    });
+    final reducedMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    await Future<void>.delayed(
+      reducedMotion
+          ? const Duration(milliseconds: 900)
+          : const Duration(milliseconds: 1700),
+    );
+    if (!mounted) {
+      return;
+    }
+    _applyAction(const CompleteQueuedTransformation());
+    if (mounted) {
+      setState(() {
+        _presentingTransformationFormId = null;
+        _animating = false;
+      });
+    }
   }
 
   Future<void> _handleSoundTransition(
@@ -409,9 +502,27 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
       backgroundColor: Colors.transparent,
       showDragHandle: false,
       builder: (context) {
-        return _SupportSheet(initialView: initialView);
+        return _SupportSheet(
+          initialView: initialView,
+          state: _state,
+          onClearSavedGame: _clearSavedGameData,
+          onClearAllPrivateData: _clearAllPrivateData,
+        );
       },
     );
+  }
+
+  Future<void> _clearSavedGameData() async {
+    await _persistence.clear();
+    if (!mounted) return;
+    setState(() => _result = _buildFreshGame());
+  }
+
+  Future<void> _clearAllPrivateData() async {
+    await _persistence.clear();
+    await (await SharedPreferences.getInstance()).clear();
+    if (!mounted) return;
+    setState(() => _result = _buildFreshGame());
   }
 
   Future<void> _showMakeItemSheet() async {
@@ -619,6 +730,10 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
                           icon: Icon(Icons.more_horiz, color: headerIconColor),
                           itemBuilder: (context) => const [
                             PopupMenuItem(
+                              value: _SupportView.memories,
+                              child: Text('Memories'),
+                            ),
+                            PopupMenuItem(
                               value: _SupportView.help,
                               child: Text('Help'),
                             ),
@@ -705,6 +820,11 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
                       height: stageHeight,
                       child: PetStage(
                         state: _state,
+                        onPetTapped: () => _dispatch(const PetGreet()),
+                        transformationFormId:
+                            _presentingTransformationFormId ??
+                            _debugPreviewTransformationFormId,
+                        formIdOverride: _debugPreviewFormId,
                         onItemSelected: (itemId) {
                           _dispatch(SelectItem(itemId));
                         },
@@ -718,6 +838,8 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
                           Expanded(
                             child: ChattyActivityBox(
                               moment: _state.activityMoment,
+                              formId: _displayFormId,
+                              mood: _state.pet.mood,
                             ),
                           ),
                           const SizedBox(height: 10),
@@ -737,26 +859,37 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
               SizedBox(width: columnGap),
               Expanded(
                 flex: 5,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: SingleChildScrollView(
-                    child: ControlPanel(
-                      state: _state,
-                      templates: unlockedTemplates,
-                      onAction: _dispatch,
-                      onMakeItem: _showMakeItemSheet,
-                      onToggleMute: () {
-                        unawaited(_toggleSoundMuted());
-                      },
-                      onResetWorld: _confirmResetGame,
-                      onOpenHelp: () => _showSupportSheet(_SupportView.help),
-                      onOpenPrivacy: () =>
-                          _showSupportSheet(_SupportView.privacy),
-                      onOpenAbout: () => _showSupportSheet(_SupportView.about),
-                      isBusy: _animating,
-                      soundMuted: _soundMuted,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ChattyTalkPanel(state: _state),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: SingleChildScrollView(
+                          child: ControlPanel(
+                            state: _state,
+                            templates: unlockedTemplates,
+                            onAction: _dispatch,
+                            onMakeItem: _showMakeItemSheet,
+                            onToggleMute: () {
+                              unawaited(_toggleSoundMuted());
+                            },
+                            onResetWorld: _confirmResetGame,
+                            onOpenHelp: () =>
+                                _showSupportSheet(_SupportView.help),
+                            onOpenPrivacy: () =>
+                                _showSupportSheet(_SupportView.privacy),
+                            onOpenAbout: () =>
+                                _showSupportSheet(_SupportView.about),
+                            isBusy: _animating,
+                            soundMuted: _soundMuted,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ],
@@ -835,6 +968,14 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
                 ? 28
                 : 34,
           ),
+          Tab(
+            text: 'Talk',
+            height: ultraCompact
+                ? 24
+                : compactRightPanel
+                ? 28
+                : 34,
+          ),
         ],
       ),
     );
@@ -842,10 +983,32 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
     final rightPanel = Expanded(
       flex: ultraCompact ? 4 : 5,
       child: DefaultTabController(
-        length: 2,
+        length: 3,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (kDebugMode) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: PopupMenuButton<String?>(
+                  tooltip: 'Preview Chatty form (debug only)',
+                  onSelected: _setDebugPreviewForm,
+                  itemBuilder: (context) => [
+                    const PopupMenuItem<String?>(child: Text('Use saved form')),
+                    ...ChattyForms.all.map(
+                      (form) => PopupMenuItem<String?>(
+                        value: form.id,
+                        child: Text('Preview ${form.displayName}'),
+                      ),
+                    ),
+                  ],
+                  child: const Padding(
+                    padding: EdgeInsets.only(bottom: 2),
+                    child: Icon(Icons.palette_outlined, size: 16),
+                  ),
+                ),
+              ),
+            ],
             compactTabBar,
             SizedBox(height: ultraCompact ? 2 : 8),
             Expanded(
@@ -878,6 +1041,13 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
                       compact: compactRightPanel,
                     ),
                   ),
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: ChattyTalkPanel(
+                      state: _state,
+                      compact: compactRightPanel,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -898,6 +1068,11 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
                 flex: stageFlex,
                 child: PetStage(
                   state: _state,
+                  onPetTapped: () => _dispatch(const PetGreet()),
+                  transformationFormId:
+                      _presentingTransformationFormId ??
+                      _debugPreviewTransformationFormId,
+                  formIdOverride: _debugPreviewFormId,
                   onItemSelected: (itemId) {
                     _dispatch(SelectItem(itemId));
                   },
@@ -906,7 +1081,11 @@ class _ChattyPetHomePageState extends State<ChattyPetHomePage> {
               SizedBox(height: ultraCompact ? 4 : 6),
               Expanded(
                 flex: activityFlex,
-                child: ChattyActivityBox(moment: _state.activityMoment),
+                child: ChattyActivityBox(
+                  moment: _state.activityMoment,
+                  formId: _displayFormId,
+                  mood: _state.pet.mood,
+                ),
               ),
             ],
           ),
@@ -943,7 +1122,7 @@ List<Color> _appBackgroundColors(pet_rules.TimeOfDay timeOfDay) {
   };
 }
 
-enum _SupportView { help, privacy, about }
+enum _SupportView { memories, help, storage, privacy, about }
 
 class _MakeItemSheet extends StatefulWidget {
   const _MakeItemSheet();
@@ -1206,9 +1385,17 @@ class _MakeItemSheetState extends State<_MakeItemSheet> {
 }
 
 class _SupportSheet extends StatefulWidget {
-  const _SupportSheet({required this.initialView});
+  const _SupportSheet({
+    required this.initialView,
+    required this.state,
+    required this.onClearSavedGame,
+    required this.onClearAllPrivateData,
+  });
 
   final _SupportView initialView;
+  final GameState state;
+  final Future<void> Function() onClearSavedGame;
+  final Future<void> Function() onClearAllPrivateData;
 
   @override
   State<_SupportSheet> createState() => _SupportSheetState();
@@ -1231,10 +1418,24 @@ class _SupportSheetState extends State<_SupportSheet> {
             runSpacing: 8,
             children: [
               _SupportTabChip(
+                label: 'Memories',
+                selected: _activeView == _SupportView.memories,
+                onSelected: () {
+                  setState(() => _activeView = _SupportView.memories);
+                },
+              ),
+              _SupportTabChip(
                 label: 'Help',
                 selected: _activeView == _SupportView.help,
                 onSelected: () {
                   setState(() => _activeView = _SupportView.help);
+                },
+              ),
+              _SupportTabChip(
+                label: 'Storage',
+                selected: _activeView == _SupportView.storage,
+                onSelected: () {
+                  setState(() => _activeView = _SupportView.storage);
                 },
               ),
               _SupportTabChip(
@@ -1257,7 +1458,16 @@ class _SupportSheetState extends State<_SupportSheet> {
           Expanded(
             child: SingleChildScrollView(
               child: switch (_activeView) {
+                _SupportView.memories => _MemoriesPanel(
+                  theme: theme,
+                  state: widget.state,
+                ),
                 _SupportView.help => _HelpPanel(theme: theme),
+                _SupportView.storage => _StoragePanel(
+                  theme: theme,
+                  onClearSavedGame: widget.onClearSavedGame,
+                  onClearAllPrivateData: widget.onClearAllPrivateData,
+                ),
                 _SupportView.privacy => _PrivacyPanel(theme: theme),
                 _SupportView.about => _AboutPanel(theme: theme),
               },
@@ -1265,6 +1475,178 @@ class _SupportSheetState extends State<_SupportSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MemoriesPanel extends StatelessWidget {
+  const _MemoriesPanel({required this.theme, required this.state});
+
+  final ThemeData theme;
+  final GameState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final forms = state.life.discoveredFormIds.map(ChattyForms.byId).toList()
+      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    final events = state.life.encounteredEventIds.toList()..sort();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Chatty\'s memories',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF203B35),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Little things you and Chatty have already lived through together.',
+          style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Forms met',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF284740),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: forms
+              .map(
+                (form) => _MemoryFormCard(
+                  form: form,
+                  current: form.id == state.life.activeFormId,
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'Odd days remembered',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF284740),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (events.isEmpty)
+          Text(
+            'The calendar has been perfectly ordinary so far.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF5A716B),
+              fontStyle: FontStyle.italic,
+            ),
+          )
+        else
+          ...events.map(
+            (event) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFD5E4DE)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      const Text('✨', style: TextStyle(fontSize: 20)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          ChattyCalendarEvents.describeOccurrence(event),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF284740),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _MemoryFormCard extends StatelessWidget {
+  const _MemoryFormCard({required this.form, required this.current});
+
+  final ChattyForm form;
+  final bool current;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 144,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: current
+          ? const Color(0xFFCFEDE7)
+          : Colors.white.withValues(alpha: 0.72),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: current ? const Color(0xFF66A99F) : const Color(0xFFD5E4DE),
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 64, height: 64, child: _MemoryAvatar(form: form)),
+        const SizedBox(height: 6),
+        Text(
+          form.displayName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: const Color(0xFF284740),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        if (current) ...[
+          const SizedBox(height: 3),
+          Text(
+            'Here now',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: const Color(0xFF28675D),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+class _MemoryAvatar extends StatelessWidget {
+  const _MemoryAvatar({required this.form});
+
+  final ChattyForm form;
+
+  @override
+  Widget build(BuildContext context) {
+    final assetPath = chattyAvatarAssetPath(form.id);
+    if (assetPath == null) {
+      return Center(
+        child: Text(form.emoji, style: const TextStyle(fontSize: 30)),
+      );
+    }
+    return Image.asset(
+      assetPath,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, _, _) =>
+          Center(child: Text(form.emoji, style: const TextStyle(fontSize: 30))),
     );
   }
 }
@@ -1386,6 +1768,11 @@ class _HelpPanel extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         const _SupportBullet(
+          title: 'Included local model',
+          body:
+              'This app includes the Smol GGUF model as its local starting point. Larger GGUF models can be more capable, but use more memory and can be slower. Most phones are best kept below 1B parameters; search for “Qwen2.5-0.5B-Instruct GGUF” for a compact option. “Qwen2.5-1.5B-Instruct GGUF” is better suited to a powerful phone.',
+        ),
+        const _SupportBullet(
           title: '1. Pick care items',
           body:
               'Use the care shelf to place snacks, toys, cozy spots, and tidy-up tools on the stage.',
@@ -1418,6 +1805,106 @@ class _HelpPanel extends StatelessWidget {
       ],
     );
   }
+}
+
+class _StoragePanel extends StatelessWidget {
+  const _StoragePanel({
+    required this.theme,
+    required this.onClearSavedGame,
+    required this.onClearAllPrivateData,
+  });
+
+  final ThemeData theme;
+  final Future<void> Function() onClearSavedGame;
+  final Future<void> Function() onClearAllPrivateData;
+
+  Future<bool> _confirm(
+    BuildContext context, {
+    required String title,
+    required String body,
+    required String action,
+  }) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(action),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Storage & data',
+        style: theme.textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: const Color(0xFF203B35),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Text(
+        'Chatty-Pet keeps its game save in Android private app storage. Android removes that storage on uninstall. Smol is currently packaged with the app, not copied into a separate private runtime folder.',
+        style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+      ),
+      const SizedBox(height: 16),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.auto_stories_outlined),
+        title: const Text('Clear saved game'),
+        subtitle: const Text(
+          'Start a fresh care game without changing the app.',
+        ),
+        onTap: () async {
+          if (await _confirm(
+            context,
+            title: 'Clear saved game?',
+            body: 'This removes the saved Chatty-Pet world on this device.',
+            action: 'Clear game',
+          )) {
+            await onClearSavedGame();
+            if (context.mounted) Navigator.pop(context);
+          }
+        },
+      ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          Icons.delete_forever_outlined,
+          color: theme.colorScheme.error,
+        ),
+        title: Text(
+          'Clear all private app data',
+          style: TextStyle(color: theme.colorScheme.error),
+        ),
+        subtitle: const Text('Removes the local save and app preferences.'),
+        onTap: () async {
+          if (await _confirm(
+            context,
+            title: 'Clear all private app data?',
+            body:
+                'This permanently removes Chatty-Pet’s local save and preferences.',
+            action: 'Clear all data',
+          )) {
+            await onClearAllPrivateData();
+            if (context.mounted) Navigator.pop(context);
+          }
+        },
+      ),
+    ],
+  );
 }
 
 class _PrivacyPanel extends StatelessWidget {
@@ -1460,6 +1947,11 @@ class _PrivacyPanel extends StatelessWidget {
           title: 'Local save data',
           body:
               'Gameplay, progression, and save data stay local on the device. This build does not depend on a cloud narration service.',
+        ),
+        const _SupportBullet(
+          title: 'Optional safety reports',
+          body:
+              'A grown-up can explicitly report one Chatty reply. Only that reply, a reason, an optional note, and basic app/model details are sent; normal chats stay on this device.',
         ),
         const _SupportBullet(
           title: 'External privacy page',

@@ -31,6 +31,10 @@ class PetInspectedItem extends PetEvent {
   final String itemId;
 }
 
+class PetGreeted extends PetEvent {
+  const PetGreeted();
+}
+
 class PetAteItem extends PetEvent {
   const PetAteItem(this.itemId);
 
@@ -101,4 +105,18 @@ class StageCleared extends PetEvent {
   const StageCleared(this.clearedCount);
 
   final int clearedCount;
+}
+
+/// A form has been privately chosen and is waiting for the presentation layer
+/// to stage its surprise animation.
+class ChattyTransformationQueued extends PetEvent {
+  const ChattyTransformationQueued(this.formId);
+
+  final String formId;
+}
+
+class ChattyTransformed extends PetEvent {
+  const ChattyTransformed(this.formId);
+
+  final String formId;
 }

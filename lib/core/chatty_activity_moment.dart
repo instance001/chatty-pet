@@ -1,23 +1,9 @@
 import 'item_template.dart';
 import 'pet_rules.dart';
 
-enum ChattyScene {
-  idle,
-  scoot,
-  eat,
-  play,
-  sleep,
-  clean,
-  inspect,
-  celebrate,
-}
+enum ChattyScene { idle, scoot, eat, play, sleep, clean, inspect, celebrate }
 
-enum SkyPhase {
-  morning,
-  day,
-  evening,
-  night,
-}
+enum SkyPhase { morning, day, evening, night }
 
 class ChattyActivityMoment {
   const ChattyActivityMoment({
@@ -27,6 +13,7 @@ class ChattyActivityMoment {
     this.caption = 'Chatty is ready for a cozy day.',
     this.propEmoji,
     this.effectEmoji,
+    this.actorEmoji = '🐶',
   });
 
   final int serial;
@@ -35,6 +22,7 @@ class ChattyActivityMoment {
   final String caption;
   final String? propEmoji;
   final String? effectEmoji;
+  final String actorEmoji;
 
   ChattyActivityMoment copyWith({
     int? serial,
@@ -43,6 +31,7 @@ class ChattyActivityMoment {
     String? caption,
     Object? propEmoji = _sentinel,
     Object? effectEmoji = _sentinel,
+    String? actorEmoji,
   }) {
     return ChattyActivityMoment(
       serial: serial ?? this.serial,
@@ -53,6 +42,7 @@ class ChattyActivityMoment {
       effectEmoji: effectEmoji == _sentinel
           ? this.effectEmoji
           : effectEmoji as String?,
+      actorEmoji: actorEmoji ?? this.actorEmoji,
     );
   }
 
@@ -64,6 +54,7 @@ class ChattyActivityMoment {
       'caption': caption,
       'propEmoji': propEmoji,
       'effectEmoji': effectEmoji,
+      'actorEmoji': actorEmoji,
     };
   }
 
@@ -79,6 +70,7 @@ class ChattyActivityMoment {
       caption: json['caption'] as String? ?? 'Chatty is ready for a cozy day.',
       propEmoji: json['propEmoji'] as String?,
       effectEmoji: json['effectEmoji'] as String?,
+      actorEmoji: json['actorEmoji'] as String? ?? '🐶',
     );
   }
 }
@@ -87,6 +79,7 @@ ChattyActivityMoment buildIdleActivityMoment({
   required int serial,
   required TimeOfDay timeOfDay,
   required String caption,
+  String actorEmoji = '🐶',
 }) {
   return ChattyActivityMoment(
     serial: serial,
@@ -94,6 +87,7 @@ ChattyActivityMoment buildIdleActivityMoment({
     phase: skyPhaseForTimeOfDay(timeOfDay),
     caption: caption,
     effectEmoji: _idleEffectForPhase(timeOfDay),
+    actorEmoji: actorEmoji,
   );
 }
 
@@ -129,6 +123,24 @@ ChattyActivityMoment buildCelebrateActivityMoment({
   );
 }
 
+ChattyActivityMoment buildGreetingActivityMoment({
+  required int serial,
+  required TimeOfDay timeOfDay,
+  required String caption,
+  required String formEmoji,
+}) {
+  return ChattyActivityMoment(
+    serial: serial,
+    scene: ChattyScene.idle,
+    phase: skyPhaseForTimeOfDay(timeOfDay),
+    caption: caption,
+    // The activity scene now renders Chatty from the active form art. Keeping
+    // the old form emoji here produced a second, legacy Chatty beside them.
+    effectEmoji: '💛',
+    actorEmoji: formEmoji,
+  );
+}
+
 ChattyActivityMoment buildInspectActivityMoment({
   required int serial,
   required TimeOfDay timeOfDay,
@@ -150,6 +162,7 @@ ChattyActivityMoment buildUseActivityMoment({
   required TimeOfDay timeOfDay,
   required ItemTemplate template,
   required String caption,
+  String actorEmoji = '🐶',
 }) {
   return ChattyActivityMoment(
     serial: serial,
@@ -158,6 +171,7 @@ ChattyActivityMoment buildUseActivityMoment({
     caption: caption,
     propEmoji: template.emoji,
     effectEmoji: _effectForItemKind(template.kind),
+    actorEmoji: actorEmoji,
   );
 }
 

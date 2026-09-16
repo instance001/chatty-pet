@@ -4,11 +4,20 @@ import 'package:flutter/material.dart';
 
 import '../core/activity_reaction_template.dart';
 import '../core/chatty_activity_moment.dart';
+import '../core/pet_rules.dart';
+import 'chatty_avatar_asset.dart';
 
 class ChattyActivityBox extends StatefulWidget {
-  const ChattyActivityBox({super.key, required this.moment});
+  const ChattyActivityBox({
+    super.key,
+    required this.moment,
+    required this.formId,
+    required this.mood,
+  });
 
   final ChattyActivityMoment moment;
+  final String formId;
+  final PetMood mood;
 
   @override
   State<ChattyActivityBox> createState() => _ChattyActivityBoxState();
@@ -78,7 +87,8 @@ class _ChattyActivityBoxState extends State<ChattyActivityBox>
 
   @override
   Widget build(BuildContext context) {
-    final palette = _paletteFor(widget.moment.phase);
+    final palette = _paletteFor(widget.moment.phase, widget.formId);
+    final reducedMotion = MediaQuery.of(context).disableAnimations;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -122,10 +132,15 @@ class _ChattyActivityBoxState extends State<ChattyActivityBox>
                 _ambientController,
               ]),
               builder: (context, child) {
-                final reaction = Curves.easeOutCubic.transform(
-                  _reactionController.value,
-                );
-                final ambientPhase = _ambientController.value * 2 * math.pi;
+                // The controllers may continue to exist while this widget is
+                // mounted, but the rendered scene intentionally becomes a
+                // still illustration when the device requests less motion.
+                final reaction = reducedMotion
+                    ? 1.0
+                    : Curves.easeOutCubic.transform(_reactionController.value);
+                final ambientPhase = reducedMotion
+                    ? 0.0
+                    : _ambientController.value * 2 * math.pi;
                 final motion = _motionFor(
                   _activeTemplate.motion,
                   reaction,
@@ -204,6 +219,14 @@ class _ChattyActivityBoxState extends State<ChattyActivityBox>
                               compact: compact,
                               progress: reaction,
                               motion: motion,
+                              // Older saved greetings used the actor emoji as
+                              // a separate scene prop. The form art now owns
+                              // Chatty's appearance, so suppress only that
+                              // duplicate while keeping genuine item props.
+                              isLegacyActorProp:
+                                  widget.moment.scene == ChattyScene.idle &&
+                                  _activeTemplate.propEmoji ==
+                                      widget.moment.actorEmoji,
                             ),
                             Positioned(
                               left: 0,
@@ -213,6 +236,18 @@ class _ChattyActivityBoxState extends State<ChattyActivityBox>
                                 child: _GroundShadow(
                                   compact: compact,
                                   widthScale: motion.shadowScale,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: compact ? 70 : 88,
+                              child: Center(
+                                child: _MoodAccent(
+                                  mood: widget.mood,
+                                  compact: compact,
+                                  phase: ambientPhase,
                                 ),
                               ),
                             ),
@@ -244,6 +279,8 @@ class _ChattyActivityBoxState extends State<ChattyActivityBox>
                                       scaleY: motion.scaleY,
                                       child: _ChattyActor(
                                         compact: compact,
+                                        formId: widget.formId,
+                                        emoji: widget.moment.actorEmoji,
                                         tailWiggle: motion.tailWiggle,
                                         tilt: motion.actorTilt,
                                       ),
@@ -307,6 +344,49 @@ class _ChattyActivityBoxState extends State<ChattyActivityBox>
           ),
         );
       },
+    );
+  }
+}
+
+/// A small, wordless current-mood cue. It reflects the existing care bars;
+/// it never represents an unlock, score, or progression requirement.
+class _MoodAccent extends StatelessWidget {
+  const _MoodAccent({
+    required this.mood,
+    required this.compact,
+    required this.phase,
+  });
+
+  final PetMood mood;
+  final bool compact;
+  final double phase;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = switch (mood) {
+      PetMood.happy => '💛',
+      PetMood.playful => '⭐',
+      PetMood.hungry => '🍪',
+      PetMood.sleepy => '💤',
+      PetMood.messy => '🫧',
+      PetMood.curious => '❔',
+      PetMood.grumpy => '💢',
+      PetMood.cozy => '💗',
+    };
+    final drift = math.sin(phase * 1.5) * (compact ? 3 : 5);
+    final sway = math.cos(phase * 1.2) * 0.08;
+
+    return ExcludeSemantics(
+      child: Transform.translate(
+        offset: Offset(compact ? 38 : 48, drift),
+        child: Transform.rotate(
+          angle: sway,
+          child: Opacity(
+            opacity: mood == PetMood.grumpy ? 0.58 : 0.72,
+            child: Text(accent, style: TextStyle(fontSize: compact ? 17 : 22)),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -943,17 +1023,23 @@ class _GroundShadow extends StatelessWidget {
 class _ChattyActor extends StatelessWidget {
   const _ChattyActor({
     required this.compact,
+    required this.formId,
+    required this.emoji,
     required this.tailWiggle,
     required this.tilt,
   });
 
   final bool compact;
+  final String formId;
+  final String emoji;
   final double tailWiggle;
   final double tilt;
 
   @override
   Widget build(BuildContext context) {
-    final dogSize = compact ? 74.0 : 92.0;
+    final petSize = compact ? 74.0 : 92.0;
+    final assetPath = chattyAvatarAssetPath(formId);
+    final showDogTail = assetPath == null && (emoji == '🐶' || emoji == '🐕');
 
     return SizedBox(
       width: compact ? 102 : 122,
@@ -962,26 +1048,39 @@ class _ChattyActor extends StatelessWidget {
         alignment: Alignment.bottomCenter,
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            right: compact ? 14 : 18,
-            bottom: compact ? 22 : 30,
-            child: Transform.rotate(
-              angle: tailWiggle,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '〰️',
-                style: TextStyle(
-                  fontSize: compact ? 20 : 24,
-                  color: const Color(0xFF7A5B3E),
+          if (showDogTail)
+            Positioned(
+              right: compact ? 14 : 18,
+              bottom: compact ? 22 : 30,
+              child: Transform.rotate(
+                angle: tailWiggle,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '〰️',
+                  style: TextStyle(
+                    fontSize: compact ? 20 : 24,
+                    color: const Color(0xFF7A5B3E),
+                  ),
                 ),
               ),
             ),
-          ),
           Positioned(
             bottom: compact ? 12 : 16,
             child: Transform.rotate(
               angle: tilt,
-              child: Text('🐶', style: TextStyle(fontSize: dogSize)),
+              child: assetPath == null
+                  ? Text(emoji, style: TextStyle(fontSize: petSize))
+                  : SizedBox(
+                      width: petSize,
+                      height: petSize,
+                      child: Image.asset(
+                        assetPath,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (_, _, _) =>
+                            Text(emoji, style: TextStyle(fontSize: petSize)),
+                      ),
+                    ),
             ),
           ),
         ],
@@ -1031,16 +1130,18 @@ class _SceneProp extends StatelessWidget {
     required this.compact,
     required this.progress,
     required this.motion,
+    required this.isLegacyActorProp,
   });
 
   final ActivityReactionTemplate template;
   final bool compact;
   final double progress;
   final _StageMotion motion;
+  final bool isLegacyActorProp;
 
   @override
   Widget build(BuildContext context) {
-    if (template.propEmoji == null) {
+    if (template.propEmoji == null || isLegacyActorProp) {
       return const SizedBox.shrink();
     }
 
@@ -1135,8 +1236,8 @@ class _ActivityPalette {
   final bool isNight;
 }
 
-_ActivityPalette _paletteFor(SkyPhase phase) {
-  return switch (phase) {
+_ActivityPalette _paletteFor(SkyPhase phase, String formId) {
+  final base = switch (phase) {
     SkyPhase.morning => const _ActivityPalette(
       sky: [Color(0xFFE8F6FF), Color(0xFFE0F4E9), Color(0xFFD2E8DF)],
       grass: [Color(0xFFA2D98C), Color(0xFF73B363)],
@@ -1170,4 +1271,25 @@ _ActivityPalette _paletteFor(SkyPhase phase) {
       isNight: true,
     ),
   };
+  final tint = switch (formId) {
+    'sunbeam_pup' => const Color(0xFFFFD76B),
+    'moonlit_bunny' => const Color(0xFFBFC6FF),
+    'mossy_kit' => const Color(0xFF8CCB8D),
+    'comet_chick' => const Color(0xFFFFA8D4),
+    'leapling_chatty' => const Color(0xFF79D8A1),
+    'wobble_chatty' => const Color(0xFFFFE05E),
+    'spooky_chatty' => const Color(0xFF9B7AAE),
+    'festive_chatty' => const Color(0xFFF3E2EE),
+    'cursed_chatty' => const Color(0xFF6D5B83),
+    'party_chatty' => const Color(0xFFFFA9C6),
+    _ => const Color(0xFFB4E4D3),
+  };
+  return _ActivityPalette(
+    sky: base.sky.map((color) => Color.lerp(color, tint, 0.16)!).toList(),
+    grass: base.grass.map((color) => Color.lerp(color, tint, 0.07)!).toList(),
+    hill: Color.lerp(base.hill, tint, 0.08)!,
+    border: Color.lerp(base.border, tint, 0.16)!,
+    glow: Color.lerp(base.glow, tint, 0.18)!,
+    isNight: base.isNight,
+  );
 }

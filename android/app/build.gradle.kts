@@ -33,6 +33,16 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17")
+            }
+        }
     }
 
     signingConfigs {
@@ -52,12 +62,25 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The Play artifact remains arm64-only. This extra ABI is strictly
+            // for the local x86_64 Android emulator used during development.
+            ndk {
+                abiFilters += listOf("x86_64")
+            }
+        }
         release {
             signingConfig = if (hasReleaseKeystore) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")
             }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
         }
     }
 }

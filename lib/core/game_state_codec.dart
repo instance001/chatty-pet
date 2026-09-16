@@ -1,4 +1,5 @@
 import 'chatty_activity_moment.dart';
+import 'chatty_life_state.dart';
 import '../content/starter_datapack.dart';
 import 'game_state.dart';
 import 'grid.dart';
@@ -20,8 +21,11 @@ class GameStateCodec {
       'unlockedTemplateIds': state.unlockedTemplateIds.toList()..sort(),
       'recentLines': state.recentLines,
       'activityMoment': state.activityMoment.toJson(),
+      'life': state.life.toJson(),
       'customTemplates': state.templates.values
-          .where((template) => !StarterDatapack.templates.containsKey(template.id))
+          .where(
+            (template) => !StarterDatapack.templates.containsKey(template.id),
+          )
           .map((template) => template.toJson())
           .toList(),
       'pet': {
@@ -71,7 +75,7 @@ class GameStateCodec {
             position: _coordFromJson(item['position'] as Map<String, dynamic>),
             consumed: item['consumed'] as bool? ?? false,
           ),
-          )
+        )
         .where((item) => mergedTemplates.containsKey(item.templateId))
         .toList();
     final petJson = json['pet'] as Map<String, dynamic>;
@@ -117,22 +121,19 @@ class GameStateCodec {
         json['activityMoment'] as Map<String, dynamic>? ??
             const <String, dynamic>{},
       ),
+      life: ChattyLifeState.fromJson(
+        json['life'] as Map<String, dynamic>? ?? const <String, dynamic>{},
+      ),
       selectedItemId: json['selectedItemId'] as String?,
       nextItemId: json['nextItemId'] as int? ?? 1,
     );
   }
 
   static Map<String, dynamic> _coordToJson(GridCoord coord) {
-    return {
-      'x': coord.x,
-      'y': coord.y,
-    };
+    return {'x': coord.x, 'y': coord.y};
   }
 
   static GridCoord _coordFromJson(Map<String, dynamic> json) {
-    return GridCoord(
-      json['x'] as int? ?? 0,
-      json['y'] as int? ?? 0,
-    );
+    return GridCoord(json['x'] as int? ?? 0, json['y'] as int? ?? 0);
   }
 }

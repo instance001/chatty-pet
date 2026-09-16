@@ -1,4 +1,5 @@
 import 'chatty_activity_moment.dart';
+import 'chatty_life_state.dart';
 import 'events.dart';
 import 'item_instance.dart';
 import 'item_template.dart';
@@ -19,6 +20,7 @@ class GameState {
     required this.recentLines,
     required this.unlockedTemplateIds,
     this.activityMoment = const ChattyActivityMoment(),
+    this.life = const ChattyLifeState(),
     this.selectedItemId,
     this.nextItemId = 1,
   });
@@ -35,6 +37,7 @@ class GameState {
   final List<String> recentLines;
   final Set<String> unlockedTemplateIds;
   final ChattyActivityMoment activityMoment;
+  final ChattyLifeState life;
   final String? selectedItemId;
   final int nextItemId;
 
@@ -51,6 +54,7 @@ class GameState {
     List<String>? recentLines,
     Set<String>? unlockedTemplateIds,
     ChattyActivityMoment? activityMoment,
+    ChattyLifeState? life,
     Object? selectedItemId = _sentinel,
     int? nextItemId,
   }) {
@@ -67,6 +71,7 @@ class GameState {
       recentLines: recentLines ?? this.recentLines,
       unlockedTemplateIds: unlockedTemplateIds ?? this.unlockedTemplateIds,
       activityMoment: activityMoment ?? this.activityMoment,
+      life: life ?? this.life,
       selectedItemId: selectedItemId == _sentinel
           ? this.selectedItemId
           : selectedItemId as String?,

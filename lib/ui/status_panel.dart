@@ -19,20 +19,6 @@ class StatusPanel extends StatelessWidget {
     final selectedTemplate = selectedItem == null
         ? null
         : state.templates[selectedItem.templateId];
-    final nextUnlock =
-        state.templates.values
-            .where(
-              (template) => !state.unlockedTemplateIds.contains(template.id),
-            )
-            .toList()
-          ..sort((a, b) {
-            final byLevel = a.unlockLevel.compareTo(b.unlockLevel);
-            if (byLevel != 0) {
-              return byLevel;
-            }
-            return a.displayName.compareTo(b.displayName);
-          });
-
     return Card(
       elevation: 0,
       color: const Color(0xFF21453F),
@@ -81,10 +67,6 @@ class StatusPanel extends StatelessWidget {
                   compact: compact,
                 ),
                 _Chip(label: _moodLabel(state.pet.mood.name), compact: compact),
-                _Chip(
-                  label: '${state.unlockedTemplateIds.length} unlocked',
-                  compact: compact,
-                ),
               ],
             ),
             SizedBox(height: compact ? 5 : 12),
@@ -116,25 +98,11 @@ class StatusPanel extends StatelessWidget {
               accent: const Color(0xFF79D7D3),
               compact: compact,
             ),
-            _NeedMeter(
-              label: 'Affection',
-              emoji: '💛',
-              value: state.pet.affection,
-              maxValue: 20,
-              accent: const Color(0xFFFFD966),
-              compact: compact,
-            ),
             if (!utilityCompact) ...[
               SizedBox(height: compact ? 8 : 12),
               _InfoCard(
                 title: 'What To Try Next',
                 body: _nextSuggestion(state, selectedTemplate),
-                compact: compact,
-              ),
-              SizedBox(height: compact ? 6 : 8),
-              _InfoCard(
-                title: 'Unlock Progress',
-                body: _unlockSummary(state, nextUnlock.firstOrNull),
                 compact: compact,
               ),
               SizedBox(height: compact ? 6 : 8),
@@ -243,20 +211,6 @@ class StatusPanel extends StatelessWidget {
     return '$baseLine ${selectedTemplate.displayName} is selected now, so tap Scoot over to bring Chatty to it.';
   }
 
-  String _unlockSummary(GameState state, ItemTemplate? nextUnlock) {
-    if (nextUnlock == null) {
-      return 'Everything in this build is unlocked. Keep caring for Chatty and enjoy the full toy box.';
-    }
-
-    final remaining = nextUnlock.unlockLevel - state.pet.affection;
-    if (remaining <= 0) {
-      return '${nextUnlock.emoji} ${nextUnlock.displayName} is ready to unlock with the next affectionate moment.';
-    }
-
-    final pointWord = remaining == 1 ? 'point' : 'points';
-    return '${nextUnlock.emoji} ${nextUnlock.displayName} unlocks in $remaining more affection $pointWord.';
-  }
-
   String _itemSummary(ItemTemplate template) {
     return switch (template.kind) {
       ItemKind.food => 'It helps tummy needs.',
@@ -299,18 +253,17 @@ class _NeedMeter extends StatelessWidget {
     required this.value,
     required this.accent,
     required this.compact,
-    this.maxValue = 5,
   });
 
   final String label;
   final String emoji;
   final int value;
-  final int maxValue;
   final Color accent;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    const maxValue = 5;
     final progress = value / maxValue;
 
     return Padding(

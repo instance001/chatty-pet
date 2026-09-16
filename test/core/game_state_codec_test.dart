@@ -1,6 +1,7 @@
 import 'package:chatty_pet_mobile/content/starter_datapack.dart';
 import 'package:chatty_pet_mobile/core/actions.dart';
 import 'package:chatty_pet_mobile/core/chatty_activity_moment.dart';
+import 'package:chatty_pet_mobile/core/chatty_life_state.dart';
 import 'package:chatty_pet_mobile/core/custom_item_factory.dart';
 import 'package:chatty_pet_mobile/core/game_state_codec.dart';
 import 'package:chatty_pet_mobile/core/item_template.dart';
@@ -71,5 +72,30 @@ void main() {
     expect(decoded.activityMoment.phase, SkyPhase.night);
     expect(decoded.activityMoment.propEmoji, '🧼');
     expect(decoded.activityMoment.effectEmoji, '🫧');
+  });
+
+  test('game state codec keeps Chatty\'s hidden life memories', () {
+    var state = StarterDatapack.newGame();
+    for (final kind in ChattyCareKind.values) {
+      state = state.copyWith(
+        life: state.life.recordCare(kind, dayCount: kind.index + 1),
+      );
+    }
+    state = state.copyWith(
+      life: state.life.copyWith(
+        activeFormId: 'sunny_bunny',
+        discoveredFormIds: {'chatty', 'sunny_bunny'},
+        encounteredEventIds: {'halloween_2026'},
+        lastObservedLocalDateKey: '2026-10-31',
+      ),
+    );
+
+    final decoded = GameStateCodec.fromJson(GameStateCodec.toJson(state));
+
+    expect(decoded.life.activeFormId, 'sunny_bunny');
+    expect(decoded.life.discoveredFormIds, {'chatty', 'sunny_bunny'});
+    expect(decoded.life.encounteredEventIds, {'halloween_2026'});
+    expect(decoded.life.lastObservedLocalDateKey, '2026-10-31');
+    expect(decoded.life.totalCareMoments, state.life.totalCareMoments);
   });
 }
